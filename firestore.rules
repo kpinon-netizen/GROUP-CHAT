@@ -1,0 +1,39 @@
+rules_version = '2';
+// Paste this into Firebase console > Firestore Database > Rules > Publish.
+// Only people who signed in with a verified @usc.edu email can read or write anything.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function usc() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.matches('.*@usc[.]edu');
+    }
+
+    match /servers/{room}/members/{uid} {
+      allow read: if usc();
+      allow write: if usc() && request.auth.uid == uid;
+    }
+
+    match /servers/{room}/channels/{ch} {
+      allow read: if usc();
+      allow create: if usc() && ch.matches('[a-z0-9_-]{1,24}');
+    }
+
+    match /servers/{room}/channels/{ch}/messages/{id} {
+      allow read: if usc();
+      allow create: if usc()
+        && request.resource.data.u == request.auth.uid
+        && request.resource.data.x is string
+        && request.resource.data.x.size() <= 2000
+        && request.resource.data.t == request.time;
+      // the author may edit their own text; anyone verified may add a reaction
+      allow update: if usc() && (
+        (resource.data.u == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['x', 'ed']))
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rx'])
+      );
+      allow delete: if usc() && resource.data.u == request.auth.uid;
+    }
+  }
+}
